@@ -29,7 +29,7 @@ const main = async () => {
     })
   );
   app.use("/api", routes);
-  app.listen(port, "10.148.9.5", () => {
+  app.listen(port, () => {
     console.log(`Servidor online!`);
   });
 };
