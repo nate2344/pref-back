@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.VoteController = void 0;
+/* eslint-disable @typescript-eslint/no-explicit-any */
 const database_1 = require("../config/database");
 const supabase_js_1 = require("@supabase/supabase-js");
 const utils_1 = require("../utils");
@@ -42,6 +43,12 @@ class VoteController {
                 await client.query("ROLLBACK");
                 return false;
             }
+            const updateQuery = `
+        UPDATE votes
+        SET voter_photo = $1
+        WHERE id = $2;
+      `;
+            await client.query(updateQuery, [`voter-${id}.png`, id]);
             await client.query("COMMIT");
             return { message: "Seu voto foi confirmado!" };
         }
@@ -53,6 +60,69 @@ class VoteController {
             client.release();
         }
     }
+    async getAllVotes() {
+        try {
+            const votesMap = new Map();
+            const getQuery = `
+        SELECT * FROM votes;
+      `;
+            const votes = (await (0, database_1.executeQuery)(getQuery)).rows;
+            for (const vote of votes) {
+                if (votesMap.has(vote.mayor)) {
+                    const data = votesMap.get(vote.mayor);
+                    data.votes++;
+                    data.photos.push(vote.voter_photo);
+                    data.isMayor = true;
+                    votesMap.set(vote.mayor, data);
+                }
+                else {
+                    votesMap.set(vote.mayor, {
+                        votes: 1,
+                        photos: [vote.voter_photo],
+                        isMayor: true,
+                    });
+                }
+                if (votesMap.has(vote.vice_mayor)) {
+                    const data = votesMap.get(vote.vice_mayor);
+                    data.votes++;
+                    data.photos.push(vote.voter_photo);
+                    data.isMayor = false;
+                    votesMap.set(vote.vice_mayor, data);
+                }
+                else {
+                    votesMap.set(vote.vice_mayor, {
+                        votes: 1,
+                        photos: [vote.voter_photo],
+                        isMayor: false,
+                    });
+                }
+            }
+            const mayorTotal = Array.from(votesMap.values()).reduce((acc, curr) => (curr.isMayor ? acc + curr.votes : acc), 0);
+            const viceMayorTotal = Array.from(votesMap.values()).reduce((acc, curr) => (!curr.isMayor ? acc + curr.votes : acc), 0);
+            votesMap.forEach((value) => {
+                if (value.isMayor) {
+                    value.percent = (value.votes / mayorTotal) * 100;
+                }
+                else {
+                    value.percent = (value.votes / viceMayorTotal) * 100;
+                }
+            });
+            console.log(votesMap);
+            return Object.fromEntries(votesMap);
+        }
+        catch (error) {
+            return (0, utils_1.errorMessage)("Ocorreu um erro ao buscar os votos.");
+        }
+    }
+    async getPhoto(photoName) {
+        const { data, error } = await supabase.storage
+            .from("storage")
+            .createSignedUrl(photoName, 60);
+        if (error) {
+            return (0, utils_1.errorMessage)("Ocorreu um erro ao buscar a foto.");
+        }
+        return data.signedUrl;
+    }
     async uploadFile(id, file) {
         const { error } = await supabase.storage
             .from("storage")
@@ -61,16 +131,6 @@ class VoteController {
             return false;
         }
         return true;
-    }
-    // Exemplo de download de arquivo do armazenamento do Supabase
-    async downloadFile(fileName) {
-        const { error } = await supabase.storage.from("storage").download(fileName);
-        if (error) {
-            console.error("Erro ao baixar o arquivo:", error.message);
-            return;
-        }
-        // const url = URL.createObjectURL(data);
-        // Faça algo com o URL do arquivo baixado, como exibir em uma tag <img> ou <a>
     }
 }
 exports.VoteController = VoteController;

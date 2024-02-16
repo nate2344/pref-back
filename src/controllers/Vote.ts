@@ -1,5 +1,6 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { executeQuery, pool } from "../config/database";
-import { IVote } from "../models/Vote";
+import { IVote, IVoteData } from "../models/Vote";
 
 import { createClient } from "@supabase/supabase-js";
 import { errorMessage } from "../utils";
@@ -52,6 +53,14 @@ export class VoteController {
         return false;
       }
 
+      const updateQuery = `
+        UPDATE votes
+        SET voter_photo = $1
+        WHERE id = $2;
+      `;
+
+      await client.query(updateQuery, [`voter-${id}.png`, id]);
+
       await client.query("COMMIT");
       return { message: "Seu voto foi confirmado!" };
     } catch (error) {
@@ -60,6 +69,84 @@ export class VoteController {
     } finally {
       client.release();
     }
+  }
+
+  async getAllVotes() {
+    try {
+      const votesMap = new Map<string, IVoteData>();
+
+      const getQuery = `
+        SELECT * FROM votes;
+      `;
+
+      const votes = (await executeQuery<any>(getQuery)).rows;
+
+      for (const vote of votes) {
+        if (votesMap.has(vote.mayor)) {
+          const data = votesMap.get(vote.mayor)!;
+          data.votes++;
+          data.photos.push(vote.voter_photo);
+          data.isMayor = true;
+          votesMap.set(vote.mayor, data);
+        } else {
+          votesMap.set(vote.mayor, {
+            votes: 1,
+            photos: [vote.voter_photo],
+            isMayor: true,
+          });
+        }
+
+        if (votesMap.has(vote.vice_mayor)) {
+          const data = votesMap.get(vote.vice_mayor)!;
+          data.votes++;
+          data.photos.push(vote.voter_photo);
+          data.isMayor = false;
+          votesMap.set(vote.vice_mayor, data);
+        } else {
+          votesMap.set(vote.vice_mayor, {
+            votes: 1,
+            photos: [vote.voter_photo],
+            isMayor: false,
+          });
+        }
+      }
+
+      const mayorTotal = Array.from(votesMap.values()).reduce(
+        (acc, curr) => (curr.isMayor ? acc + curr.votes : acc),
+        0
+      );
+
+      const viceMayorTotal = Array.from(votesMap.values()).reduce(
+        (acc, curr) => (!curr.isMayor ? acc + curr.votes : acc),
+        0
+      );
+
+      votesMap.forEach((value) => {
+        if (value.isMayor) {
+          value.percent = (value.votes / mayorTotal) * 100;
+        } else {
+          value.percent = (value.votes / viceMayorTotal) * 100;
+        }
+      });
+
+      console.log(votesMap);
+
+      return Object.fromEntries(votesMap);
+    } catch (error) {
+      return errorMessage("Ocorreu um erro ao buscar os votos.");
+    }
+  }
+
+  async getPhoto(photoName: string) {
+    const { data, error } = await supabase.storage
+      .from("storage")
+      .createSignedUrl(photoName, 60);
+
+    if (error) {
+      return errorMessage("Ocorreu um erro ao buscar a foto.");
+    }
+
+    return data.signedUrl;
   }
 
   async uploadFile(id: number, file: Express.Multer.File) {
@@ -72,16 +159,5 @@ export class VoteController {
     }
 
     return true;
-  }
-
-  // Exemplo de download de arquivo do armazenamento do Supabase
-  async downloadFile(fileName: string) {
-    const { error } = await supabase.storage.from("storage").download(fileName);
-    if (error) {
-      console.error("Erro ao baixar o arquivo:", error.message);
-      return;
-    }
-    // const url = URL.createObjectURL(data);
-    // Faça algo com o URL do arquivo baixado, como exibir em uma tag <img> ou <a>
   }
 }

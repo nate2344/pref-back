@@ -5,3 +5,10 @@ export interface IVote {
   voterPhoto: string;
   createdAt: string;
 }
+
+export interface IVoteData {
+  votes: number;
+  photos: string[];
+  isMayor: boolean;
+  percent?: number;
+}

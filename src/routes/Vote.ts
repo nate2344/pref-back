@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { VoteController } from "../controllers/Vote";
-import { executeQuery } from "../config/database";
 import { handleErrors, parseResponse } from "../utils";
+
 import multer from "multer";
 
 const voteRouter = Router();
@@ -9,9 +9,19 @@ const voteController = new VoteController();
 const storage = multer.memoryStorage();
 const upload = multer({ storage });
 
+voteRouter.route("/photo/:photoName").get(
+  handleErrors(async (req, res) => {
+    console.log(req.params.photoName);
+
+    const result = await voteController.getPhoto(req.params.photoName);
+
+    parseResponse(res, 201, result);
+  })
+);
+
 voteRouter.route("/").get(
   handleErrors(async (_, res) => {
-    const votes = (await executeQuery("SELECT * FROM votes")).rows;
+    const votes = await voteController.getAllVotes();
 
     parseResponse(res, 200, votes);
   })
